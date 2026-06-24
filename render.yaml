@@ -1,0 +1,13 @@
+# Blueprint Render — déploie le relais WebSocket de pilotage.
+# Sur Render : New > Blueprint, pointe ce dépôt. Si le dépôt contient d'autres
+# dossiers, mets "Root Directory" = robot-locomotion.
+services:
+  - type: web
+    name: pocaa-relay
+    runtime: python
+    plan: free
+    buildCommand: pip install -r web_control/requirements.txt
+    startCommand: uvicorn web_control.relay:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PILOT_TOKEN          # change-le ! (doit correspondre côté PC et navigateur)
+        sync: false

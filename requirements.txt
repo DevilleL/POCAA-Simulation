@@ -1,0 +1,7 @@
+numpy>=1.24
+matplotlib>=3.7
+imageio>=2.31
+# pygame-ce : version communautaire de pygame, drop-in (import pygame),
+# avec des wheels précompilés pour Python 3.13/3.14 (l'ancien "pygame"
+# ne compile pas sur Python 3.14 car distutils a été retiré).
+pygame-ce>=2.5

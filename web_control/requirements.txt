@@ -1,0 +1,5 @@
+# Relais (à déployer sur Render) :
+fastapi>=0.110
+uvicorn[standard]>=0.29
+# Client robot (sur ton PC) :
+websockets>=12.0
