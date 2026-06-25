@@ -13,13 +13,16 @@
   h1{ font-size:17px; margin:0; }
   .tag{ font-size:12px; color:var(--muted); }
   input{ background:#0B1C2C; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:7px 9px; font-size:13px; }
+  input[type=range]{ padding:0; }
   button{ border:0; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:bold; cursor:pointer; background:var(--teal); color:#06231e; }
   button.ghost{ background:#1E4361; color:var(--txt); }
   button.stop{ background:var(--red); color:#fff; }
+  button.warn{ background:var(--amber); color:#3a2a00; }
   .dot{ display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--muted); margin-right:6px; }
   main{ display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:14px; }
   @media (max-width:900px){ main{ grid-template-columns:1fr; } }
   .card{ background:var(--navy2); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card.wide{ grid-column:1 / -1; }
   .card h2{ font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
   canvas{ background:#0B1C2C; border-radius:10px; width:100%; display:block; }
   .kpis{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px; }
@@ -30,9 +33,18 @@
   .pad button{ height:46px; font-size:18px; }
   .pad .e{ visibility:hidden; }
   .row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .slider{ width:100%; }
   .legend{ font-size:11px; color:var(--muted); }
   .legend b.sp{ color:var(--amber); } .legend b.rl{ color:var(--teal); }
+  .gain{ display:grid; grid-template-columns:36px 1fr 56px; align-items:center; gap:8px; margin:6px 0; }
+  .gain label{ font-family:ui-monospace,Consolas,monospace; font-size:13px; }
+  .gain .val{ font-family:ui-monospace,Consolas,monospace; font-size:13px; text-align:right; color:var(--cyan); }
+  .latrow{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin:8px 0; }
+  .latrow .c{ background:#0B1C2C; border:1px solid var(--line); border-radius:8px; padding:6px; text-align:center; }
+  .latrow .c .v{ font-family:ui-monospace,Consolas,monospace; font-size:15px; font-weight:bold; }
+  .latrow .c .l{ font-size:9px; color:var(--muted); }
+  #log{ background:#0B1C2C; border:1px solid var(--line); border-radius:8px; height:160px; overflow:auto; padding:8px; font-family:ui-monospace,Consolas,monospace; font-size:12px; }
+  #log div{ margin-bottom:2px; }
+  .ts{ color:var(--muted); }
 </style>
 </head>
 <body>
@@ -48,7 +60,7 @@
 <main>
   <section class="card">
     <h2>Carte (vue de dessus)</h2>
-    <canvas id="map" width="640" height="460"></canvas>
+    <canvas id="map" width="640" height="440"></canvas>
   </section>
 
   <section class="card">
@@ -62,37 +74,84 @@
       <div class="kpi"><div class="v" id="k_th">0</div><div class="l">cap (°)</div></div>
     </div>
     <div class="legend">Asservissement roues — <b class="sp">consigne</b> vs <b class="rl">réel</b></div>
-    <canvas id="chartL" width="640" height="150"></canvas>
+    <canvas id="chartL" width="640" height="120"></canvas>
     <div class="tag" style="margin:4px 0 8px">Roue gauche</div>
-    <canvas id="chartR" width="640" height="150"></canvas>
+    <canvas id="chartR" width="640" height="120"></canvas>
     <div class="tag" style="margin-top:4px">Roue droite</div>
+  </section>
+
+  <section class="card">
+    <h2>Latence (aller-retour)</h2>
+    <div class="latrow">
+      <div class="c"><div class="v" id="l_min">—</div><div class="l">min</div></div>
+      <div class="c"><div class="v" id="l_p50">—</div><div class="l">p50</div></div>
+      <div class="c"><div class="v" id="l_p95">—</div><div class="l">p95</div></div>
+      <div class="c"><div class="v" id="l_max">—</div><div class="l">max</div></div>
+      <div class="c"><div class="v" id="l_hz">—</div><div class="l">télém. Hz</div></div>
+    </div>
+    <canvas id="latChart" width="640" height="110"></canvas>
+    <p class="tag">Cible cahier des charges : pilotage &lt; 100 ms.</p>
+  </section>
+
+  <section class="card">
+    <h2>Réglage PID (en direct)</h2>
+    <div class="gain"><label>Kp</label><input id="kp" type="range" min="0" max="3" step="0.05" value="0.7"><span class="val" id="kpv">0.70</span></div>
+    <div class="gain"><label>Ki</label><input id="ki" type="range" min="0" max="5" step="0.05" value="1.1"><span class="val" id="kiv">1.10</span></div>
+    <div class="gain"><label>Kd</label><input id="kd" type="range" min="0" max="0.2" step="0.005" value="0"><span class="val" id="kdv">0.000</span></div>
+    <p class="tag">Les gains sont appliqués aux deux roues ; observe l'effet sur les courbes ci-contre.</p>
 
     <h2 style="margin-top:14px">Pilotage manuel (test)</h2>
-    <div class="row"><span class="tag">Vitesse</span><input id="speed" class="slider" type="range" min="0" max="100" step="5" value="60"><span id="spv" class="tag">60%</span></div>
+    <div class="row"><span class="tag">Vitesse</span><input id="speed" type="range" min="0" max="100" step="5" value="60" style="flex:1"><span id="spv" class="tag">60%</span></div>
     <div class="pad">
-      <span class="e"></span>
-      <button data-k="up">▲</button>
-      <span class="e"></span>
-      <button data-k="left">◀</button>
-      <button class="stop" id="estop">■</button>
-      <button data-k="right">▶</button>
-      <span class="e"></span>
-      <button data-k="down">▼</button>
-      <span class="e"></span>
+      <span class="e"></span><button data-k="up">▲</button><span class="e"></span>
+      <button data-k="left">◀</button><button class="ghost" id="mstop">■</button><button data-k="right">▶</button>
+      <span class="e"></span><button data-k="down">▼</button><span class="e"></span>
     </div>
-    <p class="tag" style="text-align:center">Flèches/ZQSD aussi. Ce pilotage partage la même room que l'élève.</p>
+    <p class="tag" style="text-align:center">Flèches/ZQSD aussi. Même room que l'élève.</p>
+  </section>
+
+  <section class="card">
+    <h2>Sécurité & robustesse</h2>
+    <div class="row">
+      <button class="stop" id="estop">⛔ ARRÊT D'URGENCE</button>
+      <button class="warn" id="netloss">📡 Simuler perte réseau (2 s)</button>
+    </div>
+    <div class="kpis" style="margin-top:12px">
+      <div class="kpi"><div class="v" id="c_wd">0</div><div class="l">Watchdog</div></div>
+      <div class="kpi"><div class="v" id="c_es">0</div><div class="l">Arrêts urgence</div></div>
+      <div class="kpi"><div class="v" id="c_rc">0</div><div class="l">Reconnexions</div></div>
+    </div>
+    <p class="tag">Teste la robustesse : « perte réseau » fait déclencher le watchdog (le robot s'arrête puis repart). L'ESTOP fige le robot jusqu'à réarmement.</p>
+  </section>
+
+  <section class="card wide">
+    <h2>Journal d'événements</h2>
+    <div class="row" style="justify-content:space-between; margin-bottom:8px">
+      <span class="tag" id="recinfo">0 points enregistrés</span>
+      <span class="row">
+        <button class="ghost" id="clearlog">Vider le journal</button>
+        <button id="csv">⬇ Télécharger la télémétrie (CSV)</button>
+      </span>
+    </div>
+    <div id="log"></div>
   </section>
 </main>
 
 <script>
 const V_MAX=0.75, V_BACK=0.35, W_MAX=2.0;
-let ws=null, trail=[], histL=[], histR=[];
+let ws=null, trail=[], histL=[], histR=[], lats=[], latTrace=[], rec=[], events=[];
 const held={up:false,down:false,left:false,right:false};
-let speed=60, clientId=Math.random().toString(36).slice(2,8), pingSeq=0, pingSent=new Map(), driveTimer=null, pingTimer=null;
+let speed=60, clientId=Math.random().toString(36).slice(2,8), pingSeq=0, pingSent=new Map();
+let driveTimer=null, pingTimer=null, telCount=0, lastHz=0, lastState=null, pidInit=false;
+let wdCount=0, esCount=0, rcCount=0, hadConnected=false;
 const $=id=>document.getElementById(id);
 
-// remember token/room
 try{ const s=JSON.parse(localStorage.getItem("pocaa-admin")||"{}"); if(s.room)$("room").value=s.room; if(s.token)$("token").value=s.token; }catch{}
+
+function now(){ return new Date().toLocaleTimeString(); }
+function logEvent(msg){ events.unshift({ts:now(),msg}); if(events.length>200)events.pop(); renderLog(); }
+function renderLog(){ $("log").innerHTML = events.map(e=>`<div><span class="ts">${e.ts}</span> — ${e.msg}</div>`).join(""); }
+function pct(arr,p){ if(!arr.length)return 0; const a=[...arr].sort((x,y)=>x-y); return a[Math.min(a.length-1, Math.ceil(p*(a.length-1)))]; }
 
 function wsURL(){
   const proto=location.protocol==="https:"?"wss":"ws";
@@ -106,43 +165,79 @@ function connect(){
   localStorage.setItem("pocaa-admin", JSON.stringify({room:$("room").value, token:$("token").value}));
   if(ws){ ws.close(); ws=null; }
   ws=new WebSocket(wsURL());
-  ws.onopen=()=>{ setStatus("connecté",true); startPing(); };
-  ws.onclose=()=>{ setStatus("déconnecté",false); stopPing(); };
+  ws.onopen=()=>{ setStatus("connecté",true); startPing(); if(hadConnected){ rcCount++; $("c_rc").textContent=rcCount; logEvent("Reconnexion au relais"); } else logEvent("Connecté au relais"); hadConnected=true; };
+  ws.onclose=()=>{ setStatus("déconnecté",false); stopPing(); logEvent("Connexion perdue"); };
   ws.onerror=()=>setStatus("erreur",false);
   ws.onmessage=ev=>{
     let m; try{ m=JSON.parse(ev.data); }catch{ return; }
     if(!m) return;
     if(m.type==="tel") onTel(m);
-    else if(m.type==="pong" && typeof m.id==="string"){ const s=pingSent.get(m.id); if(s!=null){ pingSent.delete(m.id); const ms=Math.round(performance.now()-s); $("lat").textContent="latence "+ms+" ms"; $("lat").style.color = ms<100?"#2dd4bf":ms<300?"#fbbf24":"#ef4444"; } }
+    else if(m.type==="pong" && typeof m.id==="string"){ const s=pingSent.get(m.id); if(s!=null){ pingSent.delete(m.id); onLatency(Math.round(performance.now()-s)); } }
     else if(m.type==="status"){ setStatus(m.robot_online?"connecté (robot en ligne)":"connecté (robot hors ligne)",true); }
   };
 }
 function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
 
-// ---- ping ----
-function startPing(){ if(pingTimer!=null) return; const f=()=>{ if(!ws||ws.readyState!==1) return; const now=performance.now(); for(const[k,t]of pingSent) if(now-t>5000)pingSent.delete(k); const id=clientId+"-"+(++pingSeq); pingSent.set(id,now); send({type:"ping",id}); }; f(); pingTimer=setInterval(f,2000); }
+// ---- latence ----
+function onLatency(ms){
+  lats.push(ms); if(lats.length>120)lats.shift();
+  latTrace.push(ms); if(latTrace.length>120)latTrace.shift();
+  $("lat").textContent="latence "+ms+" ms"; $("lat").style.color = ms<100?"#2dd4bf":ms<300?"#fbbf24":"#ef4444";
+  $("l_min").textContent=Math.min(...lats); $("l_max").textContent=Math.max(...lats);
+  $("l_p50").textContent=pct(lats,0.5); $("l_p95").textContent=pct(lats,0.95);
+  drawLat();
+}
+function startPing(){ if(pingTimer!=null) return; const f=()=>{ if(!ws||ws.readyState!==1) return; const t=performance.now(); for(const[k,v]of pingSent) if(t-v>5000)pingSent.delete(k); const id=clientId+"-"+(++pingSeq); pingSent.set(id,t); send({type:"ping",id}); }; f(); pingTimer=setInterval(f,1000); }
 function stopPing(){ if(pingTimer!=null){ clearInterval(pingTimer); pingTimer=null; } pingSent.clear(); }
+
+// ---- débit télémétrie (Hz) ----
+setInterval(()=>{ lastHz=telCount; telCount=0; $("l_hz").textContent=lastHz; },1000);
 
 // ---- pilotage manuel ----
 function loop(){ if(driveTimer!=null) return; driveTimer=setInterval(()=>{ if(!(held.up||held.down||held.left||held.right)){ clearInterval(driveTimer); driveTimer=null; return; } const k=speed/100; let v=0,w=0; if(held.up)v+=V_MAX*k; if(held.down)v-=V_BACK*k; if(held.left)w+=W_MAX*k; if(held.right)w-=W_MAX*k; send({type:"cmd",v,w}); },50); }
 function press(d){ held[d]=true; loop(); }
 function release(d){ held[d]=false; if(!(held.up||held.down||held.left||held.right)) send({type:"cmd",v:0,w:0}); }
 function stopAll(){ for(const k in held)held[k]=false; send({type:"cmd",v:0,w:0}); }
-
 document.querySelectorAll(".pad button[data-k]").forEach(b=>{ const k=b.dataset.k;
   b.addEventListener("pointerdown",e=>{e.preventDefault();press(k);});
   b.addEventListener("pointerup",e=>{e.preventDefault();release(k);});
   b.addEventListener("pointerleave",()=>release(k));
 });
-$("estop").addEventListener("click",stopAll);
+$("mstop").addEventListener("click",stopAll);
 const KMAP={ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right",z:"up",s:"down",q:"left",d:"right",Z:"up",S:"down",Q:"left",D:"right"};
 addEventListener("keydown",e=>{const d=KMAP[e.key]; if(!d)return; e.preventDefault(); if(!e.repeat)press(d);});
 addEventListener("keyup",e=>{const d=KMAP[e.key]; if(!d)return; e.preventDefault(); release(d);});
 $("speed").addEventListener("input",e=>{ speed=+e.target.value; $("spv").textContent=speed+"%"; });
 $("connect").addEventListener("click",connect);
 
+// ---- PID live ----
+function sendPid(){ const kp=+$("kp").value, ki=+$("ki").value, kd=+$("kd").value;
+  $("kpv").textContent=kp.toFixed(2); $("kiv").textContent=ki.toFixed(2); $("kdv").textContent=kd.toFixed(3);
+  send({type:"config",kp,ki,kd}); }
+["kp","ki","kd"].forEach(id=>$(id).addEventListener("input",sendPid));
+
+// ---- sécurité ----
+let estopOn=false;
+$("estop").addEventListener("click",()=>{ estopOn=!estopOn; send({type:"estop",on:estopOn}); $("estop").textContent=estopOn?"✅ RÉARMER":"⛔ ARRÊT D'URGENCE"; logEvent(estopOn?"ARRÊT D'URGENCE activé":"Réarmement"); });
+$("netloss").addEventListener("click",()=>{ send({type:"netloss",ms:2000}); logEvent("Simulation perte réseau (2 s)"); });
+
+// ---- journal / CSV ----
+$("clearlog").addEventListener("click",()=>{ events=[]; renderLog(); });
+$("csv").addEventListener("click",()=>{
+  const head="ts_ms,state,x,y,theta,vL,spL,vR,spR,v,w,latency_ms";
+  const lines=rec.map(r=>[r.ts,r.state,r.x,r.y,r.theta,r.vL,r.spL,r.vR,r.spR,r.v,r.w,r.lat].join(","));
+  const blob=new Blob([head+"\n"+lines.join("\n")],{type:"text/csv"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pocaa_telemetrie.csv"; a.click();
+});
+
 // ---- télémétrie ----
 function onTel(t){
+  telCount++;
+  if(!pidInit && t.kp!=null){ pidInit=true; $("kp").value=t.kp; $("ki").value=t.ki; $("kd").value=t.kd;
+    $("kpv").textContent=(+t.kp).toFixed(2); $("kiv").textContent=(+t.ki).toFixed(2); $("kdv").textContent=(+t.kd).toFixed(3); }
+  if(t.state!==lastState){ if(t.state==="WATCHDOG_STOP"){ wdCount++; $("c_wd").textContent=wdCount; logEvent("Watchdog déclenché (perte réseau)"); }
+    if(t.state==="ESTOP"){ esCount++; $("c_es").textContent=esCount; logEvent("Robot en ARRÊT D'URGENCE"); }
+    if(t.state==="NORMAL" && lastState){ logEvent("Retour à l'état NORMAL"); } lastState=t.state; }
   $("k_state").textContent=t.state; $("k_state").style.color = t.state==="NORMAL"?"#2dd4bf":"#ef4444";
   $("k_v").textContent=t.v.toFixed(2); $("k_w").textContent=t.w.toFixed(2);
   $("k_x").textContent=t.x.toFixed(2); $("k_y").textContent=t.y.toFixed(2);
@@ -150,8 +245,12 @@ function onTel(t){
   trail.push([t.x,t.y]); if(trail.length>400)trail.shift();
   histL.push([t.spL ?? 0, t.vL]); if(histL.length>240)histL.shift();
   histR.push([t.spR ?? 0, t.vR]); if(histR.length>240)histR.shift();
+  rec.push({ts:Date.now(),state:t.state,x:t.x,y:t.y,theta:t.theta.toFixed(3),vL:t.vL,spL:t.spL,vR:t.vR,spR:t.spR,v:t.v,w:t.w,lat:lats.length?lats[lats.length-1]:""});
+  if(rec.length>6000)rec.shift();
+  $("recinfo").textContent=rec.length+" points enregistrés";
   drawMap(t); drawChart($("chartL"),histL); drawChart($("chartR"),histR);
 }
+
 function drawMap(t){
   const c=$("map"), x=c.getContext("2d"), W=c.width, H=c.height; x.clearRect(0,0,W,H);
   const xl=t.xlim||2.1, yl=t.ylim||1.6, s=Math.min((W*0.46)/xl,(H*0.46)/yl);
@@ -164,17 +263,23 @@ function drawMap(t){
 }
 function drawChart(c,h){
   const x=c.getContext("2d"), W=c.width, H=c.height, pad=6; x.clearRect(0,0,W,H);
-  const M=12; // échelle ± rad/s
-  const Y=v=>H/2 - (v/M)*(H/2-pad);
+  const M=12, Y=v=>H/2-(v/M)*(H/2-pad);
   x.strokeStyle="#1E4361"; x.lineWidth=1; x.beginPath(); x.moveTo(0,H/2); x.lineTo(W,H/2); x.stroke();
   if(h.length<2) return;
   const X=i=>i/(h.length-1)*W;
-  // consigne (ambre, pointillé)
   x.strokeStyle="#FBBF24"; x.lineWidth=1.5; x.setLineDash([4,3]); x.beginPath(); h.forEach((p,i)=>{const y=Y(p[0]); i?x.lineTo(X(i),y):x.moveTo(X(i),y);}); x.stroke(); x.setLineDash([]);
-  // réel (teal)
   x.strokeStyle="#2DD4BF"; x.lineWidth=1.8; x.beginPath(); h.forEach((p,i)=>{const y=Y(p[1]); i?x.lineTo(X(i),y):x.moveTo(X(i),y);}); x.stroke();
 }
+function drawLat(){
+  const c=$("latChart"), x=c.getContext("2d"), W=c.width, H=c.height, pad=8; x.clearRect(0,0,W,H);
+  if(latTrace.length<2) return;
+  const mx=Math.max(120, ...latTrace), X=i=>i/(latTrace.length-1)*W, Y=v=>H-pad-(v/mx)*(H-2*pad);
+  // ligne 100 ms (cible)
+  x.strokeStyle="#1E4361"; x.lineWidth=1; x.setLineDash([3,3]); x.beginPath(); x.moveTo(0,Y(100)); x.lineTo(W,Y(100)); x.stroke(); x.setLineDash([]);
+  x.strokeStyle="#38BDF8"; x.lineWidth=1.8; x.beginPath(); latTrace.forEach((v,i)=>{const y=Y(v); i?x.lineTo(X(i),y):x.moveTo(X(i),y);}); x.stroke();
+}
 drawMap({x:0,y:0,theta:Math.PI/2,state:"—",xlim:2.1,ylim:1.6,track:0.3});
+renderLog();
 </script>
 </body>
 </html>
