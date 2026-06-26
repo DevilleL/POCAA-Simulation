@@ -106,6 +106,15 @@ async def run(url, room, token):
                             session.robot.safety.clear_estop()
                     elif mtype == "netloss":
                         session.blackout(float(m.get("ms", 2000)))
+                    elif mtype == "obstacles":
+                        # mise à jour des obstacles depuis le dashboard (édition live)
+                        try:
+                            session.world.obstacles = [
+                                (float(o[0]), float(o[1]), float(o[2]))
+                                for o in m.get("obs", [])
+                            ]
+                        except (TypeError, ValueError, IndexError):
+                            pass
                 except (ValueError, TypeError):
                     pass
 

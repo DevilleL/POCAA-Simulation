@@ -62,9 +62,14 @@
 
 <main>
   <section class="card">
-    <h2>Carte (vue de dessus)</h2>
-    <canvas id="map" width="640" height="440"></canvas>
+    <h2>Carte & obstacles (test)</h2>
+    <canvas id="map" width="640" height="440" style="touch-action:none; cursor:crosshair"></canvas>
     <p class="tag" id="obsinfo">Anticollision : en attente…</p>
+    <div class="row" style="margin-top:6px">
+      <button class="ghost" id="obsreset">↺ Obstacles par défaut</button>
+      <button class="ghost" id="obsclear">Tout effacer</button>
+    </div>
+    <p class="tag">Édition : <b>clic</b> = ajouter · <b>glisser</b> = déplacer · <b>molette</b> = agrandir/réduire · <b>clic droit</b> = supprimer.</p>
   </section>
 
   <section class="card">
@@ -150,6 +155,8 @@
 <script>
 const V_MAX=0.75, V_BACK=0.35, W_MAX=2.0;
 let ws=null, trail=[], histL=[], histR=[], lats=[], latTrace=[], rec=[], events=[], obstacles=[];
+let obsControlled=false, mapS=1, lastTel=null, dragIdx=-1, dragOff=[0,0], lastObsSent=0;
+const DEFAULT_OBS=[[1.5,0,0.25],[-0.9,0.6,0.25],[-0.6,-0.7,0.3]];
 const held={up:false,down:false,left:false,right:false};
 let speed=60, clientId=Math.random().toString(36).slice(2,8), pingSeq=0, pingSent=new Map();
 let driveTimer=null, pingTimer=null, telCount=0, lastHz=0, lastState=null, pidInit=false;
@@ -233,6 +240,43 @@ let estopOn=false;
 $("estop").addEventListener("click",()=>{ estopOn=!estopOn; send({type:"estop",on:estopOn}); $("estop").textContent=estopOn?"✅ RÉARMER":"⛔ ARRÊT D'URGENCE"; logEvent(estopOn?"ARRÊT D'URGENCE activé":"Réarmement"); });
 $("netloss").addEventListener("click",()=>{ send({type:"netloss",ms:2000}); logEvent("Simulation perte réseau (2 s)"); });
 
+// ---- éditeur d'obstacles (sur la carte) ----
+const mapEl=$("map");
+function screenToWorld(e){
+  const r=mapEl.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*(mapEl.width/r.width);
+  const my=(e.clientY-r.top)*(mapEl.height/r.height);
+  return [ (mx-mapEl.width/2)/mapS, (mapEl.height/2-my)/mapS ];
+}
+function obsAt(wx,wy){ for(let i=obstacles.length-1;i>=0;i--){ const o=obstacles[i]; if(Math.hypot(wx-o[0],wy-o[1])<=o[2]) return i; } return -1; }
+function redraw(){ if(lastTel) drawMap(lastTel); }
+function sendObstacles(){ obsControlled=true; send({type:"obstacles", obs:obstacles.map(o=>[+o[0],+o[1],+o[2]])}); redraw(); }
+function pushObstacles(now){ if(now){ sendObstacles(); return; } const t=performance.now(); if(t-lastObsSent>60){ lastObsSent=t; sendObstacles(); } }
+
+mapEl.addEventListener("pointerdown",e=>{
+  const [wx,wy]=screenToWorld(e); const i=obsAt(wx,wy);
+  if(i>=0){ dragIdx=i; dragOff=[wx-obstacles[i][0], wy-obstacles[i][1]]; }
+  else { obstacles.push([+wx.toFixed(3), +wy.toFixed(3), 0.25]); dragIdx=obstacles.length-1; dragOff=[0,0]; pushObstacles(true); }
+  obsControlled=true; mapEl.setPointerCapture(e.pointerId);
+});
+mapEl.addEventListener("pointermove",e=>{
+  if(dragIdx<0) return; const [wx,wy]=screenToWorld(e);
+  obstacles[dragIdx][0]=+(wx-dragOff[0]).toFixed(3); obstacles[dragIdx][1]=+(wy-dragOff[1]).toFixed(3);
+  redraw(); pushObstacles(false);
+});
+mapEl.addEventListener("pointerup",()=>{ if(dragIdx>=0){ dragIdx=-1; pushObstacles(true); } });
+mapEl.addEventListener("wheel",e=>{
+  const [wx,wy]=screenToWorld(e); const i=obsAt(wx,wy); if(i<0) return; e.preventDefault();
+  obstacles[i][2]=+Math.max(0.05, Math.min(1.2, obstacles[i][2]-e.deltaY*0.0006)).toFixed(3);
+  obsControlled=true; redraw(); pushObstacles(false);
+}, {passive:false});
+mapEl.addEventListener("contextmenu",e=>{
+  const [wx,wy]=screenToWorld(e); const i=obsAt(wx,wy); if(i<0) return; e.preventDefault();
+  obstacles.splice(i,1); obsControlled=true; redraw(); pushObstacles(true);
+});
+$("obsreset").addEventListener("click",()=>{ obstacles=DEFAULT_OBS.map(o=>[...o]); pushObstacles(true); logEvent("Obstacles réinitialisés"); });
+$("obsclear").addEventListener("click",()=>{ obstacles=[]; pushObstacles(true); logEvent("Obstacles effacés"); });
+
 // ---- journal / CSV ----
 $("clearlog").addEventListener("click",()=>{ events=[]; renderLog(); });
 $("csv").addEventListener("click",()=>{
@@ -260,7 +304,8 @@ function onTel(t){
   rec.push({ts:Date.now(),state:t.state,x:t.x,y:t.y,theta:t.theta.toFixed(3),vL:t.vL,spL:t.spL,vR:t.vR,spR:t.spR,v:t.v,w:t.w,lat:lats.length?lats[lats.length-1]:""});
   if(rec.length>6000)rec.shift();
   $("recinfo").textContent=rec.length+" points enregistrés";
-  if(t.obs) obstacles=t.obs;
+  lastTel=t;
+  if(!obsControlled && t.obs) obstacles=t.obs;
   $("obsinfo").textContent = "Anticollision — obstacle le plus proche : " + (t.dmin!=null?Number(t.dmin).toFixed(2):"—") + " m" + (t.avoid?"   ⚠ ÉVITEMENT ACTIF":"");
   $("obsinfo").style.color = t.avoid?"#ef4444":"#9FB3C8";
   drawMap(t); drawChart($("chartL"),histL); drawChart($("chartR"),histR);
@@ -269,6 +314,7 @@ function onTel(t){
 function drawMap(t){
   const c=$("map"), x=c.getContext("2d"), W=c.width, H=c.height; x.clearRect(0,0,W,H);
   const xl=t.xlim||2.1, yl=t.ylim||1.6, s=Math.min((W*0.46)/xl,(H*0.46)/yl);
+  mapS=s;
   const P=(ax,ay)=>[W/2+ax*s,H/2-ay*s];
   x.strokeStyle="#1E4361"; x.lineWidth=1; const a=P(-xl,-yl),b=P(xl,yl); x.strokeRect(a[0],b[1],b[0]-a[0],a[1]-b[1]);
   // obstacles
