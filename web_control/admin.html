@@ -64,6 +64,7 @@
   <section class="card">
     <h2>Carte (vue de dessus)</h2>
     <canvas id="map" width="640" height="440"></canvas>
+    <p class="tag" id="obsinfo">Anticollision : en attente…</p>
   </section>
 
   <section class="card">
@@ -148,7 +149,7 @@
 
 <script>
 const V_MAX=0.75, V_BACK=0.35, W_MAX=2.0;
-let ws=null, trail=[], histL=[], histR=[], lats=[], latTrace=[], rec=[], events=[];
+let ws=null, trail=[], histL=[], histR=[], lats=[], latTrace=[], rec=[], events=[], obstacles=[];
 const held={up:false,down:false,left:false,right:false};
 let speed=60, clientId=Math.random().toString(36).slice(2,8), pingSeq=0, pingSent=new Map();
 let driveTimer=null, pingTimer=null, telCount=0, lastHz=0, lastState=null, pidInit=false;
@@ -259,6 +260,9 @@ function onTel(t){
   rec.push({ts:Date.now(),state:t.state,x:t.x,y:t.y,theta:t.theta.toFixed(3),vL:t.vL,spL:t.spL,vR:t.vR,spR:t.spR,v:t.v,w:t.w,lat:lats.length?lats[lats.length-1]:""});
   if(rec.length>6000)rec.shift();
   $("recinfo").textContent=rec.length+" points enregistrés";
+  if(t.obs) obstacles=t.obs;
+  $("obsinfo").textContent = "Anticollision — obstacle le plus proche : " + (t.dmin!=null?Number(t.dmin).toFixed(2):"—") + " m" + (t.avoid?"   ⚠ ÉVITEMENT ACTIF":"");
+  $("obsinfo").style.color = t.avoid?"#ef4444":"#9FB3C8";
   drawMap(t); drawChart($("chartL"),histL); drawChart($("chartR"),histR);
 }
 
@@ -267,10 +271,13 @@ function drawMap(t){
   const xl=t.xlim||2.1, yl=t.ylim||1.6, s=Math.min((W*0.46)/xl,(H*0.46)/yl);
   const P=(ax,ay)=>[W/2+ax*s,H/2-ay*s];
   x.strokeStyle="#1E4361"; x.lineWidth=1; const a=P(-xl,-yl),b=P(xl,yl); x.strokeRect(a[0],b[1],b[0]-a[0],a[1]-b[1]);
+  // obstacles
+  obstacles.forEach(o=>{ const q=P(o[0],o[1]); x.fillStyle="rgba(251,191,36,0.22)"; x.strokeStyle="#FBBF24"; x.lineWidth=1.5; x.beginPath(); x.arc(q[0],q[1],o[2]*s,0,7); x.fill(); x.stroke(); });
   x.strokeStyle="#818CF8"; x.lineWidth=2; x.beginPath(); trail.forEach((p,i)=>{const q=P(p[0],p[1]); i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]);}); x.stroke();
   const p=P(t.x,t.y), r=(t.track?t.track/2:0.15)*s;
   x.fillStyle=t.state==="NORMAL"?"#2DD4BF":"#EF4444"; x.beginPath(); x.arc(p[0],p[1],r,0,7); x.fill();
   x.strokeStyle="#fff"; x.lineWidth=3; x.beginPath(); x.moveTo(p[0],p[1]); x.lineTo(p[0]+Math.cos(t.theta)*r*1.6,p[1]-Math.sin(t.theta)*r*1.6); x.stroke();
+  if(t.avoid){ x.strokeStyle="#EF4444"; x.lineWidth=2; x.beginPath(); x.arc(p[0],p[1],r*1.8,0,7); x.stroke(); }
 }
 function drawChart(c,h){
   const x=c.getContext("2d"), W=c.width, H=c.height, pad=6; x.clearRect(0,0,W,H);

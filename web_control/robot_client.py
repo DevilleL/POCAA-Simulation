@@ -15,13 +15,17 @@ import json
 
 from src.robot import Robot
 from src.config import RobotConfig
+from src.world import World
 
 
 class RobotSession:
     """Cœur testable, sans réseau : applique les commandes et fait avancer la sim."""
     def __init__(self, cfg: RobotConfig = None, win_w=900, win_h=700, ppm=200):
         self.cfg = cfg or RobotConfig()
-        self.robot = Robot(self.cfg)
+        # quelques obstacles dans l'arène (pour démontrer l'anticollision)
+        obstacles = [(1.5, 0.0, 0.25), (-0.9, 0.6, 0.25), (-0.6, -0.7, 0.3)]
+        self.world = World(obstacles)
+        self.robot = Robot(self.cfg, world=self.world)
         self.t = 0.0
         margin = self.cfg.track_width / 2
         self.x_limit = (win_w / 2) / ppm - margin
@@ -63,6 +67,9 @@ class RobotSession:
             "kp": round(self.robot.pid_l.kp, 3),
             "ki": round(self.robot.pid_l.ki, 3),
             "kd": round(self.robot.pid_l.kd, 3),
+            "dmin": round(min(tel["dmin"], self.cfg.sensor_range), 3),
+            "avoid": tel["avoid"],
+            "obs": [[round(o[0], 3), round(o[1], 3), round(o[2], 3)] for o in self.world.obstacles],
         })
 
 

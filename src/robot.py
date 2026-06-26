@@ -4,16 +4,22 @@ C'est l'objet qu'on fait tourner dans la simulation. Il reçoit des commandes
 haut niveau (v, w) — comme si elles venaient du Raspberry Pi via Websocket — et
 fait l'asservissement bas niveau — comme le ferait l'ESP32.
 """
+import math
+
 from . import kinematics
 from .motor import DCMotor, Encoder
 from .pid import PID, Ramp
 from .safety import SafetyFSM
 from .config import RobotConfig
 
+# Capteurs de proximité avant : angles (rad) relatifs au cap du robot.
+SENSOR_ANGLES = [math.radians(d) for d in (-40, -20, 0, 20, 40)]
+
 
 class Robot:
-    def __init__(self, cfg: RobotConfig = None):
+    def __init__(self, cfg: RobotConfig = None, world=None):
         self.cfg = cfg or RobotConfig()
+        self.world = world              # monde avec obstacles (None = pas d'anticollision)
         c = self.cfg
         self.motor_l = DCMotor(c.motor_max_speed, c.motor_tau)
         self.motor_r = DCMotor(c.motor_max_speed, c.motor_tau)
@@ -37,10 +43,29 @@ class Robot:
         self._cmd = (v, w)
         self._last_cmd_time = now
 
+    def _front_distance(self):
+        """Distance au plus proche obstacle dans l'arc avant (capteurs simulés)."""
+        if self.world is None:
+            return float("inf")
+        x, y, th = self.pose
+        rng = self.cfg.sensor_range
+        return min(self.world.ray_distance(x, y, th + a, rng) for a in SENSOR_ANGLES)
+
     def step(self, dt, now):
         """Un pas de la boucle de contrôle. Renvoie un dict de télémétrie."""
         c = self.cfg
         v, w = self._cmd
+
+        # anticollision : on bride l'avance si un obstacle est détecté devant
+        dmin = self._front_distance()
+        avoid = False
+        if v > 0 and dmin < c.collision_slow:
+            if dmin <= c.collision_stop:
+                v = 0.0
+            else:
+                v *= (dmin - c.collision_stop) / (c.collision_slow - c.collision_stop)
+            avoid = True
+
         # consigne roues (cinématique inverse)
         target_l, target_r = kinematics.inverse(v, w, c.track_width, c.wheel_radius)
 
@@ -75,4 +100,5 @@ class Robot:
             "u_l": u_l, "u_r": u_r,
             "x": self.pose[0], "y": self.pose[1], "theta": self.pose[2],
             "v": v_real, "w": w_real,
+            "dmin": dmin, "avoid": avoid,
         }

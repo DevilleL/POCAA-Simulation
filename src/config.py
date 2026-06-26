@@ -29,6 +29,11 @@ class RobotConfig:
     reverse_limit: float = 0.30        # marche arrière bridée à 30 % de la puissance
     watchdog_timeout: float = 0.5      # s   (perte réseau > 500 ms => arrêt)
 
+    # --- Anticollision (capteurs de proximité simulés) ---
+    sensor_range: float = 0.9          # m   (portée des capteurs avant)
+    collision_slow: float = 0.55       # m   (distance où l'on commence à ralentir)
+    collision_stop: float = 0.22       # m   (distance d'arrêt)
+
     @property
     def wheel_radius(self) -> float:
         return self.wheel_diameter / 2.0
