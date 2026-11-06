@@ -1,0 +1,11 @@
+.git
+.github
+**/__pycache__
+.venv
+venv
+outputs
+sim
+tests
+firmware
+docs
+.omc

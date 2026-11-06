@@ -1,0 +1,18 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest fastapi "uvicorn[standard]" websockets
+      - run: python -m pytest -q tests
+      - name: L'image Docker se construit
+        run: docker build -t pocaa-sim .
